@@ -334,7 +334,7 @@ void* venc_dev::async_venc_message_thread (void *input)
                 venc_msg.buf.flags = 0;
                 venc_msg.buf.ptrbuffer = (OMX_U8 *)omx_venc_base->m_pOutput_pmem[v4l2_buf.index].buffer;
                 venc_msg.buf.clientdata=(void*)omxhdr;
-                venc_msg.buf.timestamp = (uint64_t) v4l2_buf.timestamp.tv_sec * (uint64_t) 1000000 + (uint64_t) v4l2_buf.timestamp.tv_usec;
+                venc_msg.buf.timestamp = (int64_t) v4l2_buf.timestamp.tv_sec * (int64_t) 1000000 + (int64_t) v4l2_buf.timestamp.tv_usec;
 
                 /* TODO: ideally report other types of frames as well
                  * for now it doesn't look like IL client cares about
@@ -2444,6 +2444,15 @@ bool venc_dev::venc_get_batch_size(OMX_U32 *size)
     }
 }
 
+bool venc_dev::venc_get_buffer_mode()
+{
+    return metadatamode;
+}
+
+bool venc_dev::venc_is_avtimer_needed()
+{
+    return mUseAVTimerTimestamps;
+}
 
 bool venc_dev::venc_empty_buf(void *buffer, void *pmem_data_buf, unsigned index, unsigned fd)
 {
@@ -2876,7 +2885,8 @@ bool venc_dev::venc_empty_buf(void *buffer, void *pmem_data_buf, unsigned index,
                         if (encodePerfMode == OMX_TRUE)
                             buf.flags |= V4L2_BUF_FLAG_PERF_MODE;
                         // Clear SET_VIDEO_PERF_MODE in buffer handle
-                        gbm_perform(GBM_PERFORM_SET_METADATA, handle, GBM_METADATA_SET_VIDEO_PERF_MODE, OMX_FALSE);
+                        encodePerfMode = OMX_FALSE;
+                        gbm_perform(GBM_PERFORM_SET_METADATA, handle, GBM_METADATA_SET_VIDEO_PERF_MODE, &encodePerfMode);
                     }
                     fd = handle->ion_fd;
 #else
@@ -5012,13 +5022,15 @@ void venc_dev::venc_set_quality_boost(OMX_BOOL c2d_enable)
     // 2. RCMode is VBR
     // 3. Input is RGBA/RGBA_UBWC (C2D enabled)
     // 4. width <= 960 and height <= 960
-    // 5. FPS <= 30
-    // 6. bitrate < 2Mbps
+    // 5. width >= 400 and height >= 400
+    // 6. FPS <= 30
+    // 7. bitrate < 2Mbps
 
     if (mQualityBoostRequested && c2d_enable &&
         m_sVenc_cfg.codectype == V4L2_PIX_FMT_H264 &&
         rate_ctrl.rcmode == V4L2_MPEG_VIDEO_BITRATE_MODE_VBR &&
         m_sVenc_cfg.dvs_width <= 960 && m_sVenc_cfg.dvs_height <= 960 &&
+        m_sVenc_cfg.dvs_width >= 400 && m_sVenc_cfg.dvs_height >= 400 &&
         (m_sVenc_cfg.fps_num / m_sVenc_cfg.fps_den) <= 30 &&
         bitrate.target_bitrate < VENC_QUALITY_BOOST_BITRATE_THRESHOLD) {
         mQualityBoostEligible = true;
